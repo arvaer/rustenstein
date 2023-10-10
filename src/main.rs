@@ -1,3 +1,4 @@
+use std::f32::consts::PI;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
@@ -100,27 +101,33 @@ fn main() {
         }
     }
 
-    let player_x = 3.456;
-    let player_y = 2.345;
-    let player_a:f32 = 1.345;
+    let player_x = 3.0;
+    let player_y = 2.0;
+    let player_a: f32 = 0.523;
+    let fov: f32 = PI / 3.0;
     let px = player_x * rect_w as f32;
     let py = player_y * rect_h as f32;
     let white = pack_color(255, 255, 255, None);
-
     fill_rect(&mut buffer, 5, 5, px as usize, py as usize, white);
 
-    let mut c = 0.0;
-    while c < 20.0 {
-        let cx = player_x + c*player_a.cos();
-        let cy = player_y + c*player_a.sin();
+    for t in 0..WIN_W {
+        let mut c = 0.0;
+        let angle: f32 = player_a - fov / 2.0 + fov * t as f32 / WIN_W as f32;
+        while c < 20.0 {
+            let cx = player_x + c * angle.cos();
+            let cy = player_y + c * angle.sin();
 
-        if MAP.as_bytes()[cx as usize + MAP_H * cy as usize] != 32 {
-            break;
+            if MAP.as_bytes()[cx as usize + MAP_H * cy as usize] != 32
+                || cx > MAP_W as f32
+                || cy > MAP_H as f32
+            {
+                break;
+            }
+            let px = cx * rect_w as f32;
+            let py = cy * rect_h as f32;
+            buffer[px as usize + WIN_W * py as usize] = white;
+            c += 0.05;
         }
-        let px = cx*rect_w as f32;
-        let py = cy*rect_h as f32;
-        buffer[px as usize + WIN_W * py as usize] = white;
-        c += 0.05;
     }
 
     drop_ppm_image(&file, &buffer);
