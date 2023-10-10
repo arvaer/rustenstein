@@ -102,31 +102,26 @@ fn main() {
 
     let player_x = 3.456;
     let player_y = 2.345;
-    let player_gaze:f32 = 25.432; //degrees
-    let px = (player_x * rect_w as f32) as usize;
-    let py = (player_y * rect_h as f32) as usize;
+    let player_a:f32 = 1.345;
+    let px = player_x * rect_w as f32;
+    let py = player_y * rect_h as f32;
+    let white = pack_color(255, 255, 255, None);
 
-    fill_rect(&mut buffer, 5, 5, px, py, pack_color(0, 255, 255, None));
+    fill_rect(&mut buffer, 5, 5, px as usize, py as usize, white);
 
-    let ray_max_len:f32 = 20.0;
-    let mut c:f32 = 0.0;
-    while c < ray_max_len{
-        println!("c: {}", c);
-        let ray_x = player_x + c*player_gaze.cos();
-        let ray_y = player_y + c*player_gaze.sin();
-        println!("ray_x: {}, ray_y: {}", ray_x, ray_y);
-        let rx = (ray_x * rect_w as f32) as usize;
-        let ry = (ray_y * rect_h as f32) as usize;
-        let map_x = ray_x as usize;
-        let map_y = ray_y as usize;
+    let mut c = 0.0;
+    while c < 20.0 {
+        let cx = player_x + c*player_a.cos();
+        let cy = player_y + c*player_a.sin();
 
-        println!("map_x: {}, map_y: {}", map_x, map_y);
-       // if MAP.as_bytes()[map_x  + MAP_H  * map_y] == 32 { break; };
-            fill_rect(&mut buffer, 3,3, rx, ry, pack_color(0,255,255,None));
-        c += 1.0;
-
+        if MAP.as_bytes()[cx as usize + MAP_H * cy as usize] != 32 {
+            break;
+        }
+        let px = cx*rect_w as f32;
+        let py = cy*rect_h as f32;
+        buffer[px as usize + WIN_W * py as usize] = white;
+        c += 0.05;
     }
-
 
     drop_ppm_image(&file, &buffer);
     return ();
