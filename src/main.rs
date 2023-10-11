@@ -66,7 +66,8 @@ fn unpack_color(color: &u32) -> (u8, u8, u8, u8) {
     return (r, g, b, a);
 }
 
-fn drop_ppm_image(file: &File, buffer: &[u32]) {
+fn drop_ppm_image(file_path: &Path, buffer: &[u32]) {
+    let file = File::create(file_path).unwrap();
     let mut ofs = BufWriter::new(file);
     write!(ofs, "P6\n{} {}\n255\n", WIN_W, WIN_H).unwrap();
 
@@ -92,33 +93,56 @@ fn fill_rect(buffer: &mut [u32], x: usize, y: usize, w: usize, h: usize, color: 
 }
 
 fn main() {
-    let player: Player = Player {
+    let mut player: Player = Player {
         x: 3.0,
         y: 2.0,
-        a: 0.523,
+        a: 0.0,
     };
     let white = Color {
         r: 255,
         g: 255,
         b: 255,
         a: None,
-    }.new();
-    let cyan = Color {
-        r: 0,
+    }
+    .new();
+    let off_white = Color {
+        r: 255,
         g: 255,
-        b: 255,
+        b: 200,
         a: None,
-    }.new();
+    }
+    .new();
     let gray = Color {
         r: 128,
         g: 128,
         b: 128,
         a: None,
-    }.new();
+    }
+    .new();
+    let red = Color {
+        r: 255,
+        g: 0,
+        b: 0,
+        a: None,
+    }
+    .new();
+    let black = Color {
+        r: 0,
+        g: 0,
+        b: 0,
+        a: None,
+    }
+    .new();
 
-    let file_path = Path::new(&"./out.ppm");
-    let file = File::create(file_path).unwrap();
-    let mut buffer: Vec<u32> = vec![white; WIN_H * WIN_W];
+
+    for frame in 0..360{
+        let mut buffer: Vec<u32> = vec![white; WIN_H * WIN_W];
+        let file_path_str = format!("out/{}.ppm", frame);
+        let file_path = Path::new(&file_path_str);
+        player.a += 2.0 * PI / 360.0;
+        println!("frame: {}", frame);
+        println!("player a: {}", player.a);
+
 
     for j in 0..MAP_H {
         for i in 0..MAP_W {
@@ -127,46 +151,62 @@ fn main() {
             };
             let map_x_pix = i * RECT_W;
             let map_y_pix = j * RECT_H;
-            fill_rect(
-                &mut buffer,
-                map_x_pix,
-                map_y_pix,
-                RECT_W,
-                RECT_H,
-                pack_color(0, 255, 255, None),
-            );
+            let color;
+            if MAP.as_bytes()[i + MAP_W * j] == 49 {
+                color = red;
+            } else if MAP.as_bytes()[i + MAP_W * j] == 50 {
+                color = off_white;
+            } else if MAP.as_bytes()[i + MAP_W * j] == 51 {
+                color = black;
+            } else {
+                color = gray;
+            }
+            fill_rect(&mut buffer, map_x_pix, map_y_pix, RECT_W, RECT_H, color);
         }
     }
 
     for t in 0..WIN_W / 2 {
         let mut c = 0.0;
-        let angle: f32 = player.a - FOV / 2.0 + FOV * t as f32 / WIN_W as f32;
+        let angle: f32 = (player.a - (FOV / 2.0)) + (FOV * t as f32 / (WIN_W as f32 / 2.0));
         while c < 20.0 {
             let cx = player.x + c * angle.cos();
             let cy = player.y + c * angle.sin();
 
             let px = cx * RECT_W as f32;
             let py = cy * RECT_H as f32;
-            buffer[px as usize + WIN_W * py as usize] = gray;
-
-            if cx > MAP_W as f32 || cy > MAP_H as f32 {
+            if cx >= MAP_W as f32 || cy >= MAP_H as f32 || cx < 0.0 || cy < 0.0 {
                 break;
             }
-            if MAP.as_bytes()[cx as usize + MAP_H * cy as usize] != 32 {
+
+            buffer[px as usize + (WIN_W) * py as usize] = gray;
+            if MAP.as_bytes()[cx as usize + MAP_W * cy as usize] != 32 {
+                let color;
+                if MAP.as_bytes()[cx as usize + MAP_W * cy as usize] == 49 {
+                    color = red;
+                } else if MAP.as_bytes()[cx as usize + MAP_W * cy as usize] == 50 {
+                    color = off_white;
+                } else if MAP.as_bytes()[cx as usize + MAP_W * cy as usize] == 51 {
+                    color = black;
+                } else {
+                    color = gray;
+                }
                 let column_height = WIN_H as f32 / c;
+
                 fill_rect(
                     &mut buffer,
-                    WIN_W / 2 + t,
-                    (WIN_H as f32 / 2.0 - column_height / 2.0) as usize,
+                    (WIN_W / 2) + t,
+                    ((WIN_H as f32 / 2.0) - (column_height / 2.0)) as usize,
                     1,
                     column_height as usize,
-                    cyan,
+                    color,
                 );
+                break;
             }
-            c += 0.05;
+            c += 0.01;
         }
     }
 
-    drop_ppm_image(&file, &buffer);
+    drop_ppm_image(&file_path, &buffer);
+    }
     return ();
 }
