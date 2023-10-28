@@ -80,7 +80,7 @@ fn main() {
     };
     let mut buffer: Vec<u32> = vec![get_white(); WIN_H * WIN_W];
 
-    for frame in 0..360 {
+    for frame in 0..60 {
         let file_path_str = format!("out/{}.ppm", frame);
         let file_path = Path::new(&file_path_str);
         player.a += 2.0 * PI / 360.0;
