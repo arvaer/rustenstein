@@ -1,7 +1,9 @@
+use flate2::read::ZlibDecoder;
 use std::fs::File;
 use std::io;
-use std::io::prelude::*;
 use std::io::BufReader;
+use std::io::Read;
+
 // The Png Encoding algorithm has seven steps:
 // Path Extraction
 // Scanline Serialization
@@ -23,6 +25,16 @@ struct Chunk {
     chunk_type: [u8; 4],
     chunk_data: Box<[u8]>,
     crc: [u8; 4],
+}
+#[derive(Debug)]
+struct ImageMetaData {
+    width: u32,
+    height: u32,
+    bit_depth: u8,
+    colour_type: u8,
+    compression: u8,
+    filter_method: u8,
+    interlace_method: u8,
 }
 
 fn itoh(x: u8) -> char {
@@ -61,6 +73,18 @@ fn verify_signature(signature: &[u8; 8]) -> bool {
     let valid_png: [u8; 8] = [137, 80, 78, 71, 13, 10, 26, 10];
     return signature == &valid_png;
 }
+
+fn print_chunk(chunk: &Chunk) {
+    println!("Length: {}", chunk.length);
+    println!("Type: {:?}", chunk.chunk_type);
+    println!(
+        "Type as Ascii: {:?}",
+        std::str::from_utf8(&chunk.chunk_type).unwrap()
+    );
+    println!("Data: {:?}", chunk.chunk_data);
+    println!("CRC: {:?}", chunk.crc);
+}
+
 fn parse_stream_into_chunks<R>(stream: &mut BufReader<R>) -> Option<Chunk>
 where
     R: std::io::Read,
@@ -86,11 +110,7 @@ where
 
     match chunk {
         Some(chunk) => {
-            println!("Length: {}", chunk.length);
-            println!("Type: {:?}", chunk.chunk_type);
-            println!("Type as Ascii: {:?}", std::str::from_utf8(&chunk.chunk_type).unwrap());
-            println!("Data: {:?}", chunk.chunk_data);
-            println!("CRC: {:?}", chunk.crc);
+            //            print_chunk(chunk);
             return Some(chunk);
         }
         _ => {
@@ -100,8 +120,62 @@ where
     }
 }
 
+fn parse_image_meta_data(chunk: &Chunk) -> ImageMetaData {
+    let mut image_meta_data: ImageMetaData = ImageMetaData {
+        width: 0,
+        height: 0,
+        bit_depth: 0,
+        colour_type: 0,
+        compression: 0,
+        filter_method: 0,
+        interlace_method: 0,
+    };
+    let mut width_bytes = [0u8; 4];
+    width_bytes.copy_from_slice(&chunk.chunk_data[0..4]);
+    image_meta_data.width = u32::from_be_bytes(width_bytes);
+
+    let mut height_bytes = [0u8; 4];
+    height_bytes.copy_from_slice(&chunk.chunk_data[4..8]);
+    image_meta_data.height = u32::from_be_bytes(height_bytes);
+
+    image_meta_data.bit_depth = u8::from_be_bytes([chunk.chunk_data[8]]);
+    image_meta_data.colour_type = u8::from_be_bytes([chunk.chunk_data[9]]);
+    image_meta_data.compression = u8::from_be_bytes([chunk.chunk_data[10]]);
+    image_meta_data.filter_method = u8::from_be_bytes([chunk.chunk_data[11]]);
+    image_meta_data.interlace_method = u8::from_be_bytes([chunk.chunk_data[12]]);
+
+    return image_meta_data;
+}
+
+fn unfilter_scanline(
+    filter_type: u8,
+    filtered_scanline: &[u8],
+    previous_scanline: Option<&[u8]>,
+    scanline_length: usize,
+) -> Vec<u8> {
+    match filter_type {
+        0 => filtered_scanline.to_vec(),
+        1 => {
+            let unfiltered_scanline: Vec<u8> = Vec::with_capacity(scanline_length);
+
+            for (i, &x) in filtered_scanline.iter().enumerate() {
+                let recon_a = if i > 0 { filtered_scanline[i - 1] } else { 0 };
+                recon_x = x.wrapping_add(recon_a);
+                unfiltered_scanline[i] = recon_x;
+            }
+
+            unfiltered_scanline
+        },
+        2 => {
+
+        },
+        3 => {},
+        4 => {}
+    }
+}
+
 fn main() -> io::Result<()> {
-    let png_file = File::open("../monsters.png")?;
+    let png_file = File::open("./18monsters.png")?;
     let mut reader = BufReader::new(png_file);
     let mut signature: [u8; 8] = [0; 8];
     reader.read_exact(&mut signature).unwrap();
@@ -109,36 +183,48 @@ fn main() -> io::Result<()> {
         panic!("Not a valid signature");
     };
 
+    let mut idat_data_stream: Vec<u8> = Vec::new();
+    let mut scanline_length: usize = 0;
+    let mut image_meta_data: Option<ImageMetaData> = None;
+
     loop {
         let chunk = parse_stream_into_chunks(&mut reader).unwrap();
+        if chunk.chunk_type == ([73, 72, 68, 82]) {
+            image_meta_data = Some(parse_image_meta_data(&chunk));
+            print!("{:?}", image_meta_data);
+            if let Some(meta_data) = &image_meta_data {
+                scanline_length = meta_data.width as usize * 4;
+            }
+        }
+
         if chunk.chunk_type == ([73, 69, 78, 68]) {
             break;
         }
-
+        if chunk.chunk_type == ([73, 68, 65, 84]) {
+            idat_data_stream.extend_from_slice(&chunk.chunk_data);
+        }
     }
-    //    let mut idhr_length_bytes: [u8;4] = [0;4];
-    //    reader.read_exact(&mut idhr_length_bytes).unwrap();
-    //    let idhr_length = u32::from_be_bytes(idhr_length_bytes);
-    //
-    //    let mut idhr_chunk_type : [u8;4] = [0;4];
-    //    reader.read_exact(&mut idhr_chunk_type).unwrap();
-    //
-    //    let mut idhr_chunk_data  = vec![0; idhr_length as usize];
-    //    reader.read_exact(&mut idhr_chunk_data).unwrap();
-    //
-    //    let mut idhr_crc: [u8;4] = [0;4];
-    //    reader.read_exact(&mut idhr_crc);
-    //
-    //    let idhr_chunk = Chunk{
-    //        length:idhr_length,
-    //        chunk_type: idhr_chunk_type,
-    //        chunk_data: idhr_chunk_data.into_boxed_slice(),
-    //        crc: idhr_crc
-    //    };
-    //    // Debug print
-    //    println!("IHDR Length: {}", idhr_chunk.length);
-    //    println!("IHDR Type: {:?}", idhr_chunk.chunk_type);
-    //    println!("IHDR Data: {:?}", idhr_chunk.chunk_data);
-    //    println!("IHDR CRC: {:?}", idhr_chunk.crc);
+    // Create a ZlibDecoder wrapped around your IDAT data stream
+    let mut decoder = ZlibDecoder::new(&idat_data_stream[..]);
+    let mut decompressed_data = Vec::new();
+    let mut previous_scanline: Option<&[u8]> = None;
+
+    decoder.read_to_end(&mut decompressed_data)?;
+    for (i, scanline) in decompressed_data.chunks(scanline_length + 1).enumerate() {
+        let filter_type = scanline[0];
+        let filtered_scanline = &scanline[1..];
+
+        println!("Scanline: {}", i);
+        println!("Filter type: {}", filter_type);
+
+        let unfiltered_scanline = unfilter_scanline(
+            filter_type,
+            filtered_scanline,
+            previous_scanline,
+            scanline_length,
+        );
+        previous_scanline = Some(filtered_scanline.clone());
+    }
+
     Ok(())
 }
