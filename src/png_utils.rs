@@ -147,35 +147,64 @@ fn parse_image_meta_data(chunk: &Chunk) -> ImageMetaData {
     return image_meta_data;
 }
 
+fn paeth_predictor(a: u8, b: u8, c: u8) -> u8 {
+    let p = a.wrapping_add(b).wrapping_sub(c);
+    let pa = p.abs_diff(a);
+    let pb = p.abs_diff(b);
+    let pc = p.abs_diff(c);
+
+    let pr = if pa <= pb && pa <= pc {
+        a
+    } else if pb <= pc {
+        b
+    } else {
+        c
+    };
+
+    return pr;
+}
+
 fn unfilter_scanline(
     filter_type: u8,
     filtered_scanline: &[u8],
     previous_scanline: Option<&[u8]>,
     scanline_length: usize,
 ) -> Vec<u8> {
-    match filter_type {
-        0 => filtered_scanline.to_vec(),
-        1 => {
-            let unfiltered_scanline: Vec<u8> = Vec::with_capacity(scanline_length);
+    let mut unfiltered_scanline: Vec<u8> = vec![0; scanline_length];
 
-            for (i, &x) in filtered_scanline.iter().enumerate() {
-                let recon_a = if i > 0 { filtered_scanline[i - 1] } else { 0 };
-                recon_x = x.wrapping_add(recon_a);
-                unfiltered_scanline[i] = recon_x;
+    for (i, &x) in filtered_scanline.iter().enumerate() {
+        let recon_a: u8 = if i > 0 { filtered_scanline[i - 1] } else { 0 };
+
+        let recon_b: u8 = if previous_scanline.is_some() { previous_scanline.unwrap()[i] } else { 0 };
+
+        let recon_c = if previous_scanline.is_some() {
+            if i > 0 { previous_scanline.unwrap()[i - 1] } else { 0 }
+        } else {
+            0
+        };
+
+        let recon_x = match filter_type {
+            0 => x,
+            1 => x.wrapping_add(recon_a),
+            2 => x.wrapping_add(recon_b),
+            3 => {
+                let apb = recon_a.wrapping_add(recon_b) / 2;
+                x.wrapping_add(apb)
             }
+            4 => x.wrapping_add(paeth_predictor(recon_a, recon_b, recon_c)),
+            _ => {
+                panic!("Unsupported filter type: {}", filter_type);
+            }
+        };
 
-            unfiltered_scanline
-        },
-        2 => {
-
-        },
-        3 => {},
-        4 => {}
+        unfiltered_scanline[i] = recon_x;
     }
+
+    return unfiltered_scanline;
 }
 
 fn main() -> io::Result<()> {
-    let png_file = File::open("./18monsters.png")?;
+    let png_file = File::open("./monsters.png")?;
     let mut reader = BufReader::new(png_file);
     let mut signature: [u8; 8] = [0; 8];
     reader.read_exact(&mut signature).unwrap();
@@ -191,7 +220,7 @@ fn main() -> io::Result<()> {
         let chunk = parse_stream_into_chunks(&mut reader).unwrap();
         if chunk.chunk_type == ([73, 72, 68, 82]) {
             image_meta_data = Some(parse_image_meta_data(&chunk));
-            print!("{:?}", image_meta_data);
+            println!("{:?}", image_meta_data);
             if let Some(meta_data) = &image_meta_data {
                 scanline_length = meta_data.width as usize * 4;
             }
@@ -204,18 +233,14 @@ fn main() -> io::Result<()> {
             idat_data_stream.extend_from_slice(&chunk.chunk_data);
         }
     }
-    // Create a ZlibDecoder wrapped around your IDAT data stream
     let mut decoder = ZlibDecoder::new(&idat_data_stream[..]);
     let mut decompressed_data = Vec::new();
     let mut previous_scanline: Option<&[u8]> = None;
 
     decoder.read_to_end(&mut decompressed_data)?;
-    for (i, scanline) in decompressed_data.chunks(scanline_length + 1).enumerate() {
+    for (_i, scanline) in decompressed_data.chunks(scanline_length + 1).enumerate() {
         let filter_type = scanline[0];
         let filtered_scanline = &scanline[1..];
-
-        println!("Scanline: {}", i);
-        println!("Filter type: {}", filter_type);
 
         let unfiltered_scanline = unfilter_scanline(
             filter_type,
@@ -223,7 +248,9 @@ fn main() -> io::Result<()> {
             previous_scanline,
             scanline_length,
         );
-        previous_scanline = Some(filtered_scanline.clone());
+        previous_scanline = Some(filtered_scanline);
+        println!("Filter type: {}", filter_type);
+        println!("Scanline: {:?}", unfiltered_scanline);
     }
 
     Ok(())
